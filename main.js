@@ -1,19 +1,16 @@
-//**************************FIREBASE FUNCTIONALITY****************************//
-/// Importing functions and variables from the Firebase Psych library
+// //**************************FIREBASE FUNCTIONALITY****************************//
+// /// Importing functions and variables from the Firebase Psych library
 import { 
     writeRealtimeDatabase,writeURLParameters,readRealtimeDatabase,
     blockRandomization,finalizeBlockRandomization,firebaseUserId 
 } from "./firebasepsych1.0.js";
 
-console.log("Firebase UserId=" + firebaseUserId);
+// console.log("Firebase UserId=" + firebaseUserId);
 
-const studyId = 'study1';
+const studyId = 'gameTest1';
 
-// Example: storing a numeric value
-// The result of this is stored on the path: "[studyId]/participantData/[firebaseUserId]/trialData/trial1/ResponseTime"
-let pathnow = studyId + '/participantData/' + firebaseUserId + '/trialData/trial1/responseTime';
-let valuenow = 280;
-writeRealtimeDatabase(pathnow, valuenow);
+// // Example: storing a numeric value
+// // The result of this is stored on the path: "[studyId]/participantData/[firebaseUserId]/trialData/trial1/ResponseTime"
 
 
 //**************************GAME INITIALIZATION*******************************//
@@ -27,9 +24,29 @@ const world = { width: 800, height: 800 };
 const center = { x: canvas.width / 2, y: canvas.height / 2 };
 let observableRadius = 390; // Radius for positioning objects
 
+let settings = {};
+
+function getDifficultySettingsFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    let settings = {
+        spawnProbability: parseFloat(urlParams.get('spawnProbability')) || .2,
+        spawnInterval: parseInt(urlParams.get('spawnInterval'), 10) || 1000,
+        numSpawnLocations: parseInt(urlParams.get('numSpawnLocations'), 10) || 10,
+        valueSkew: parseFloat(urlParams.get('valueSkew')) || 1,
+        valueLow: parseFloat(urlParams.get('valueLow')) ||0,
+        valueHigh: parseFloat(urlParams.get('valueHigh')) || 1,
+        playerSpeed: parseFloat(urlParams.get('playerSpeed'),10) || 1.5,
+        speedLow: parseFloat(urlParams.get('speedLow'),10) || 0.5, // lowest end of object speed distribution
+        speedHigh: parseFloat(urlParams.get('speedHigh'),10) || 1.5 // highest end of object speed distribution
+    };
+    return settings;
+}
+
+// let engageInstructions = false;
+
 // Timing variables
 let gameInterval, gameStartTime, elapsedTime;
-const gameTime = 10000; // Two minutes in milliseconds
+const gameTime = 120000; // Two minutes in milliseconds
 let isGameRunning = false;
 let frameCount = 0;
 const fps = 60; // Desired logic updates per second
@@ -59,7 +76,7 @@ const player = {
     moving:false,
     targetX:0,
     targetY:0,
-    velocity:1.5,
+    velocity: 1.5,
     angle:0,
     speed: 1.5, 
     width:50, 
@@ -75,7 +92,7 @@ const camera = {
 // ****************************UPDATE FUNCTIONS***************************//
 let currentRound = 1;
 let maxRounds = 5;
-let settings = {}
+// let settings = {}
 let spawnLocations= [];
 
 // let settings = {};
@@ -84,17 +101,10 @@ let spawnLocations= [];
 //     // Add more settings for each level
 // };
 
-function getDifficultySettingsFromURL() {
-    const urlParams = new URLSearchParams(window.location.search);
-    let settings = {
-        spawnProbability: parseFloat(urlParams.get('spawnProbability')) || .2,
-        spawnInterval: parseInt(urlParams.get('spawnInterval'), 10) || 1000,
-        numSpawnLocations: parseInt(urlParams.get('numSpawnLocations'), 10) || 10,
-        fillRadiusSkew: parseFloat(urlParams.get('fillRadiusSkew')) || 3,
-    };
-    return settings;
-}
 
+
+// Initialization code for starting page
+initializeStartingPage();
 // Start Game function
 function startGame(round) {
     currentRound = round || currentRound; // Start at the specified round, or the current round
@@ -137,6 +147,16 @@ function endGame(advanceRound = false) {
     console.log("Intercepted Targets", caughtTargets);  
     console.log("Player Clicks Location", playerClicks);
     console.log("Player Locations During Movement", playerLocation);
+
+    let path1 = studyId + '/participantData/' + firebaseUserId + '/spawnData';
+    let path2 = studyId + '/participantData/' + firebaseUserId + '/caughtTargets';
+    let path3 = studyId + '/participantData/' + firebaseUserId + '/playerClicks';
+    let path4 = studyId + '/participantData/' + firebaseUserId + '/playerLocation';
+
+    // writeRealtimeDatabase(path1, spawnData);
+    // writeRealtimeDatabase(path2, caughtTargets);
+    // writeRealtimeDatabase(path3, playerClicks);
+    // writeRealtimeDatabase(path4, playerLocation);
 
     if (advanceRound) {
         currentRound++;
@@ -213,6 +233,8 @@ function render() {
 function updateObjects(settings) {
     // console.log("Current Settings", settings)
     // console.log('Updating objects');
+
+    player.velocity = settings.playerSpeed;
  
     // Update player position if it is moving
     if (player.moving) {
@@ -230,6 +252,8 @@ function updateObjects(settings) {
             player.angle = Math.atan2(deltaY, deltaX);
             player.x += player.velocity * Math.cos(player.angle);
             player.y += player.velocity * Math.sin(player.angle);
+
+            console.log("Player Speed", player.velocity);
 
             playerLocation.push({time: frameCount, x: player.x, y: player.y});
         }
@@ -313,6 +337,8 @@ function spawnObject(settings){
     spawnLocations.forEach(location => { 
         let randomThreshold = Math.random();
         // console.log("Current Location Being Assessed:", location); 
+
+    
         
         // only attempt a spawn if the elapsed time is greater than the spawn interval
         if (elapsedTime - location.lastSpawnTime >= settings.spawnInterval) {
@@ -352,18 +378,24 @@ function createComposite(settings) {
     // minSize + Math.random() * (maxSize - minSize); // Random size within range
 
     // Sample u ~ Uniform(0,1)
-    let u = Math.random();
-
+    // adjust u by the skewFloor and skewCeiling
+    var valueLow = settings.valueLow;
+    var valueHigh = settings.valueHigh;
+    var range = valueHigh - valueLow;
+    let u = Math.random() * range + valueLow;
     // Eta controls the skewness of the value distribution
-    let eta = settings.fillRadiusSkew || 1; // Default to 1 if not provided
-
+    let eta = settings.valueSkew || 1; // Default to 1 if not provided
     // Apply the non-linear transformation
     let fillRadius = Math.pow(u, eta) * shapeSize;
-    
+
+     // sample from a distribution of speeds
+     let speedRange = settings.speedHigh - settings.speedLow
+     let speedSample = Math.random() * speedRange + settings.speedLow;
+
     let newObj = {
         ID: frameCount ,
         type: 'composite',
-        speed: 0.5, //(),
+        speed: speedSample, //(),
         x: 0,
         y: 0,
         vx: 0, // initial velocity is zero -->
@@ -441,6 +473,7 @@ function getObjectSpeed(){
     // return (Math.floor(Math.random() * 4) + 1) * 0.5;
     return 1; // making speed constant for now.
 }
+
 function checkCollision(player, obj) {
     // Calculate the player's bounding box edges from its center
     let playerLeft = player.x - player.width / 2;
@@ -682,42 +715,41 @@ function showTargetMessage(isCaught) {
       messageBox.style.display = 'none';
     }, 2000); // Hide the message after 2 seconds
 }
-// *********************************EVENT LISTENERS*********************************
+// *********************************EVENT LISTENERS********************************* //
+
+
 
 // Move from start page to game
-document.addEventListener('DOMContentLoaded', (event) => {
-    // Event listener for cursor size adjustment
-    // document.getElementById('cursorSize').addEventListener('input', handleCursorSizeChange);
-    // document.getElementById('targetProbability').addEventListener('input', handleTargetProbChange);
-    // document.getElementById('numObjects').addEventListener('input', handleNumObjectsChange);
+// Event listener for cursor size adjustment
+// document.getElementById('cursorSize').addEventListener('input', handleCursorSizeChange);
+// document.getElementById('targetProbability').addEventListener('input', handleTargetProbChange);
+// document.getElementById('numObjects').addEventListener('input', handleNumObjectsChange);
 
-    // document.getElementById('toggleAIAssistance').addEventListener('click', toggleAIAssistance);
-    // document.getElementById('aiAssistRobot').addEventListener('click', toggleAIAssistance);
+// document.getElementById('toggleAIAssistance').addEventListener('click', toggleAIAssistance);
+// document.getElementById('aiAssistRobot').addEventListener('click', toggleAIAssistance);
 
-    // Initialization code for starting page
-    initializeStartingPage();
 
-    // Event listener for starting the game by clicking on the canvas
-    canvas.addEventListener('click', (event) => {
-        const rect = canvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
 
-        // Calculate the position and size of the "Start Game" text
-        const textMetrics = ctx.measureText('Start Game');
-        const textWidth = textMetrics.width;
-        const textHeight = 30; // Estimate the height or calculate it if needed
-        const textX = canvas.width / 2 - textWidth / 2;
-        const textY = canvas.height / 2 - textHeight / 2;
+// Event listener for starting the game by clicking on the canvas
+canvas.addEventListener('click', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
 
-        // Check if the click was within the bounds of the "Start Game" text
-        if (x > textX && x < textX + textWidth && y > textY && y < textY + textHeight) {
-            startGame();
-            canvas.removeEventListener('click', startGame); // Remove the event listener after starting the game
-        }
-    });
+    // Calculate the position and size of the "Start Game" text
+    const textMetrics = ctx.measureText('Start Game');
+    const textWidth = textMetrics.width;
+    const textHeight = 30; // Estimate the height or calculate it if needed
+    const textX = canvas.width / 2 - textWidth / 2;
+    const textY = canvas.height / 2 - textHeight / 2;
 
+    // Check if the click was within the bounds of the "Start Game" text
+    if (x > textX && x < textX + textWidth && y > textY && y < textY + textHeight) {
+        startGame();
+        canvas.removeEventListener('click', startGame); // Remove the event listener after starting the game
+    }
 });
+
 
 // Event listener for player click locations
 canvas.addEventListener('click', function(event) {
